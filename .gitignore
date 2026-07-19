@@ -1,0 +1,15 @@
+# VM 메타데이터
+.vagrant/
+
+# kubeconfig / 인증서 관련
+*.conf
+.kube/
+*.crt
+*.key
+*.pem
+
+# 로그
+*.log
+
+# 에디터
+.idea/
