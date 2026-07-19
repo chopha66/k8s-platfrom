@@ -1,0 +1,10 @@
+# L2(ARP) 모드로 IP 광고 — 홈랩 표준 구성
+# BGP 모드는 라우터 연동이 필요해 VM 환경에선 과함
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: metallb-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - metallb-pool

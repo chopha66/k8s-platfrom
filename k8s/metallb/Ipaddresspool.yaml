@@ -1,0 +1,9 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: metallb-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    # host-only 대역(192.168.56.0/24) 중 VM(10~12)과 겹치지 않는 구간 사용
+    - 192.168.56.201-192.168.56.210

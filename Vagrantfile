@@ -42,13 +42,17 @@ EOF
       SHELL
 
       # kubeadm 사전 준비 (3대 공통)
-      n.vm.provision "common", type: "shell", path: "scripts/common.sh"
+      n.vm.provision "common", type: "shell", path: "init_vm/scripts/common.sh"
 
       # 역할별 프로비저닝
       if node[:role] == "master"
-        n.vm.provision "master-init", type: "shell", path: "scripts/master_init.sh"
+        n.vm.provision "master-init", type: "shell", path: "init_vm/scripts/master_init.sh"
+        # worker join 후 수동 실행 : vagrant provision master --provision-with metallb-manifests,metallb-addons
+        n.vm.provision "metallb-manifests", type: "file",
+            source: "k8s/metallb", destination: "/home/vagrant/k8s/metallb", run: "never"
+        n.vm.provision "metallb-addons", type: "shell", path: "k8s/scripts/metallb-addons.sh", run: "never"
       else
-        n.vm.provision "worker-init", type: "shell", path: "scripts/worker_init.sh"
+        n.vm.provision "worker-init", type: "shell", path: "init_vm/scripts/worker_init.sh"
       end
     end
   end
