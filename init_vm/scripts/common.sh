@@ -7,7 +7,7 @@ K8S_VERSION="v1.35"   # kubeadm/kubelet/kubectl 마이너 버전
 
 echo "=== [1/5] 스왑 비활성화 ==="
 swapoff -a
-sed -i '/ swap / s/^#*/#/' /etc/fstab
+sed -ri '/\sswap\s/ s/^/#/' /etc/fstab
 
 echo "=== [2/5] 커널 모듈 및 sysctl ==="
 cat > /etc/modules-load.d/k8s.conf <<EOF
