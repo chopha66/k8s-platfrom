@@ -8,7 +8,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/chopha66/k8s-platform.git
-    targetRevision: main
+    targetRevision: master
     path: argocd/apps
   destination:
     server: https://kubernetes.default.svc
