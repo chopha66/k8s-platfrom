@@ -1,0 +1,19 @@
+# whoami 앱을 GitOps로 관리 — k8s/test-app/ 을 클러스터에 동기화
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: whoami
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/chopha66/k8s-platform.git
+    targetRevision: master
+    path: argocd/whoami
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
