@@ -1,0 +1,19 @@
+# AoA의 최상위 Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/chopha66/k8s-platform.git
+    targetRevision: main
+    path: argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true      # Git에서 삭제된 리소스는 클러스터에서도 제거
+      selfHeal: true   # 수동 변경(drift)을 Git 상태로 자동 복구

@@ -55,6 +55,10 @@ EOF
         n.vm.provision "gateway-manifests", type: "file",
             source: "k8s/gateway", destination: "/home/vagrant/k8s/gateway"
         n.vm.provision "gateway-addons", type: "shell", path: "k8s/scripts/gateway-addons.sh", run: "never"
+        # worker join 후 수동 실행 : vagrant provision master --provision-with argocd-manifests,argocd-addons
+        n.vm.provision "argocd-manifests", type: "file",
+            source: "argocd/resources", destination: "/home/vagrant/argocd/resources"
+        n.vm.provision "argocd-addons", type: "shell", path: "k8s/scripts/argocd-addons.sh", run: "never"
       else
         n.vm.provision "worker-init", type: "shell", path: "init_vm/scripts/worker_init.sh"
       end
