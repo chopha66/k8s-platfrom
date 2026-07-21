@@ -47,13 +47,13 @@ EOF
       # 역할별 프로비저닝
       if node[:role] == "master"
         n.vm.provision "master-init", type: "shell", path: "init_vm/scripts/master_init.sh"
+        # worker join 후 수동 실행 : vagrant provision master --provision-with metallb-manifests,metallb-addons
         n.vm.provision "metallb-manifests", type: "file",
             source: "k8s/metallb", destination: "/home/vagrant/k8s/metallb"
-        # worker join 후 수동 실행 : vagrant provision master --provision-with metallb-addons
         n.vm.provision "metallb-addons", type: "shell", path: "k8s/scripts/metallb-addons.sh", run: "never"
+        # worker join 후 수동 실행 : vagrant provision master --provision-with gateway-manifests,gateway-addons
         n.vm.provision "gateway-manifests", type: "file",
             source: "k8s/gateway", destination: "/home/vagrant/k8s/gateway"
-        # worker join 후 수동 실행 : vagrant provision master --provision-with gateway-addons
         n.vm.provision "gateway-addons", type: "shell", path: "k8s/scripts/gateway-addons.sh", run: "never"
       else
         n.vm.provision "worker-init", type: "shell", path: "init_vm/scripts/worker_init.sh"
