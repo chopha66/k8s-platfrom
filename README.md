@@ -1,7 +1,7 @@
 # K8S Platform
 
 Vagrant와 쉘 스크립트로 구축한 3노드 Kubernetes 클러스터.  
-명령 두 번으로 베어 VM 프로비저닝부터 클러스터 부트스트랩, CNI, 로드밸런서 구성까지 완전 자동으로 재현된다.
+kube-proxy 없는 eBPF 기반 네트워킹(Cilium KPR) 위에 로드밸런서와 Gateway API까지, 클러스터 전 계층을 코드로 재현한다.
 
 ## 아키텍처
 
@@ -21,6 +21,7 @@ Windows 11 Host (Ryzen 7500F / 32GB)
 | 컨테이너 런타임 | containerd | apt 기본 |
 | CNI | Cilium | cilium-cli v0.19.6 |
 | LoadBalancer | MetalLB (L2 mode) | v0.16.1 |
+| L7 라우팅 | Cilium Gateway API | CRD v1.3.0 |
 
 ## 빠른 시작
 
@@ -32,9 +33,10 @@ vagrant up
 
 # 2. 애드온 설치 (모든 노드 join 후 실행해야 함 — 아래 '겪은 문제들' 참고)
 vagrant provision master --provision-with metallb-manifests,metallb-addons
+vagrant provision master --provision-with gateway-manifests,gateway-addons
 
 # 확인
-vagrant ssh master -c "kubectl get nodes"
+vagrant ssh master -c "kubectl get nodes && kubectl get gateway -A"
 ```
 
 클러스터 전체 재생성: vagrant destroy -f 후 위 과정 반복.
@@ -47,12 +49,14 @@ k8s-platform/
 ├── init_vm/
 │   └── scripts/
 │       ├── common.sh              # 3노드 공통: swap/커널/containerd/kubeadm 준비
-│       ├── master_init.sh         # master: kubeadm init + kubeconfig + Cilium
+│       ├── master_init.sh         # master: kubeadm init(kube-proxy 제외) + Cilium KPR
 │       └── worker_init.sh         # worker: kubeadm join
 └── k8s/
     ├── metallb/                   # IPAddressPool / L2Advertisement
+    ├── gateway/                   # GatewayClass / Gateway
     └── scripts/
-        └── metallb_addons.sh      # MetalLB 설치 + 설정 적용
+        ├── metallb-addons.sh      # MetalLB 설치 + 설정
+        └── gateway-addons.sh      # Gateway API CRD + Cilium Gateway 활성화
 ```
 
 프로비저닝 흐름: 모든 노드가 common.sh 실행 → 역할에 따라 master_init.sh 또는 worker_init.sh 실행 → 클러스터 완성 후 애드온을 별도 단계로 설치.
@@ -69,20 +73,30 @@ k8s-platform/
 
 ## 겪은 문제들
 
-**VirtualBox 부팅 멈춤 — Hyper-V 충돌.** Windows 11의 코어 격리(메모리 무결성)와 hypervisorlaunchtype이 켜져 있으면 VirtualBox VM이 부팅 중 멈춘다. `bcdedit /set hypervisorlaunchtype off` + 메모리 무결성 비활성화 + 재부팅으로 해결.
+**VirtualBox 부팅 멈춤 — Hyper-V 충돌.** Windows 11의 코어 격리(메모리 무결성)와 hypervisorlaunchtype이 켜져 있으면 VirtualBox VM이 부팅 중 멈춘다. `bcdedit /set hypervisorlaunchtype off` + 메모리 무결성 비활성화 + 재부팅으로 해결. Windows Update 후 재발할 수 있어 주기적 확인이 필요하다.
 
-**NIC 2개 함정.** Vagrant VM은 NAT(eth0) + host-only(eth1) 이중 NIC 구조라, 기본값으로 두면 kubelet과 API 서버가 모든 노드에서 동일한 NAT IP(10.0.2.15)를 광고한다. `KUBELET_EXTRA_ARGS=--node-ip=<host-only IP>`와 `kubeadm init --apiserver-advertise-address`로 고정해 해결.
+**RCU stall — 호스트 CPU 기근.** VM 부팅 중 `rcu_preempt detected stalls`와 systemd 서비스 타임아웃 발생. 원인은 백신 실시간 검사가 VM 디스크 I/O와 충돌해 게스트가 CPU를 못 받은 것. VirtualBox VM 폴더를 백신 검사 예외에 추가해 해결.
 
-**쉘 스크립트 따옴표 파싱 에러.** `unexpected EOF while looking for matching '"'`는 에러가 난 줄이 아니라 따옴표가 열린 채 닫히지 않은 상류 지점이 원인. ShellCheck(`bash -n`)로 조기 검출.
+**NIC 2개 함정.** Vagrant VM은 NAT + host-only 이중 NIC이라, 기본값으로 두면 kubelet과 API 서버가 모든 노드에서 동일한 NAT IP(10.0.2.15)를 광고한다. `--node-ip`와 `--apiserver-advertise-address`로 host-only IP를 고정해 해결.
 
-**kubectl wait 레이스 컨디션.** kubectl apply 직후 kubectl wait를 실행하면 파드가 아직 생성되지 않아 no matching resources found로 즉시 실패한다. wait는 "조건 충족 대기"만 하고 "리소스 등장 대기"는 하지 않기 때문. 파드 오브젝트 생성을 확인하는 폴링 루프를 앞단에 추가해 해결.
+**재부팅 후 kubelet 크래시 루프 — 스왑 부활.** 재부팅 후 kubelet이 기동 거부(`running with swap on is not supported`). 근본 원인은 fstab의 스왑 줄이 탭으로 구분되어 있어 `sed '/ swap /'` 패턴이 매칭에 실패, 주석 처리가 안 된 것. `swapoff -a`는 세션에만 적용되므로 재부팅으로 부활했다. `sed -ri '/\sswap\s/'`로 탭/공백 모두 처리해 해결.
 
-**프로비저닝 순서 의존성.** vagrant up은 노드를 순차 처리하므로, master 프로비저닝 시점에 worker가 존재하지 않는다. 이 상태에서 애드온을 설치하면 Deployment 파드가 스케줄될 노드가 없어(control-plane taint) Pending에 빠진다. 애드온 설치를 run: "never" provisioner로 분리하고 전체 클러스터 완성 후 명시적으로 실행하도록 구조 변경. 부트스트랩 순서 의존성 문제로, GitOps 도입(3단계)의 직접적 동기가 됐다.
+**kubectl wait 레이스 컨디션.** `kubectl apply` 직후 `kubectl wait`는 파드가 아직 없어 `no matching resources found`로 즉시 실패한다. wait는 조건 대기만 하고 리소스 등장 대기는 하지 않는다. 파드 생성을 확인하는 폴링 루프를 앞에 추가해 해결.
+
+**프로비저닝 순서 의존성.** `vagrant up`은 노드를 순차 처리하므로 master 프로비저닝 시점에 worker가 없다. 이때 애드온을 설치하면 Deployment가 스케줄될 노드가 없어 Pending에 빠진다. 애드온을 `run: "never"` provisioner로 분리해 클러스터 완성 후 실행하도록 변경.
+
+**Cilium Gateway API — CRD 버전 불일치.** cilium-cli 버전을 고정하지 않아 최신 Cilium 1.19.5가 설치됐는데, 이 버전은 Gateway API CRD v1.3.0을 요구한다. v1.1.0을 설치했더니 operator가 "Required GatewayAPI resources are not found"로 Gateway 컨트롤러를 비활성화했다. CRD를 v1.3.0으로 올리고 cilium-cli·Cilium 버전을 고정해 해결.
+
+**CRD 설치 후 operator 재검사 필요.** Cilium operator는 시작 시점에 한 번만 Gateway API CRD 존재를 검사한다. CRD가 나중에 설치되면 이미 뜬 operator는 인지하지 못하므로, `rollout restart`로 재검사를 유도해야 한다. CRD의 `condition=established` 대기도 함께 필요하다.
+
+**GatewayClass 수동 생성.** Cilium 1.19에선 `cilium` GatewayClass가 자동 생성되지 않는다. `controllerName: io.cilium/gateway-controller`를 가진 GatewayClass를 직접 정의해야 Gateway가 PROGRAMMED 상태가 된다.
+
+**HTTPRoute 404 — Gateway 이름 불일치.** 브라우저 접속 시 404. 원인은 HTTPRoute의 `parentRefs.name`이 실제 Gateway 이름과 달랐던 것. 이름을 일치시키자 HTTPRoute Status에 Accepted/ResolvedRefs가 채워지며 라우팅됐다. (수동 수정과 코드의 괴리 문제로, GitOps 도입 동기가 됐다.)
 
 ## 로드맵
 
 - [x] 1단계: VM 프로비저닝 + kubeadm 클러스터 자동화
-- [ ] 2단계: MetalLB✅, API Gateway, cert-manager
+- [x] 2단계: MetalLB + Cilium Gateway API
 - [ ] 3단계: GitOps (ArgoCD)
-- [ ] 4단계: 옵저버빌리티 (Prometheus/Grafana/Loki)
+- [ ] 4단계: 옵저버빌리티 (Prometheus/Grafana/Loki + Hubble)
 - [ ] 5단계: 시크릿 관리 + 보안 강화
