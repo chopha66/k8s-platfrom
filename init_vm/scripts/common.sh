@@ -57,4 +57,17 @@ cat > /etc/default/kubelet <<EOF
 KUBELET_EXTRA_ARGS=--node-ip=${NODE_IP}
 EOF
 
+echo "=== [+] kubectl 자동완성 및 alias  ==="
+apt-get install -y bash-completion
+
+cat >> /home/vagrant/.bashrc <<'BASHRC'
+
+source /usr/share/bash-completion/bash_completion
+source <(kubectl completion bash)
+alias k=kubectl
+complete -o default -F __start_kubectl k
+export KUBECONFIG=$HOME/.kube/config
+BASHRC
+chown vagrant:vagrant /home/vagrant/.bashrc
+
 echo "=== 완료: $(hostname) (node-ip: ${NODE_IP}) ==="
